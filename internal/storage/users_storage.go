@@ -59,6 +59,7 @@ func (s *Storage) GetAllUsers() ([]domain.ProfileResponse, error) {
 	users := make([]domain.ProfileResponse, 0)
 	for i := range s.users {
 		user := domain.ProfileResponse{
+			ID:           s.users[i].ID,
 			Email:        s.users[i].Email,
 			Name:         s.users[i].Name,
 			DateOfBirth:  s.users[i].DateOfBirth,
@@ -112,6 +113,7 @@ func (s *Storage) GetProfile(token domain.LoginResponse) (domain.ProfileResponse
 	for i := range s.users {
 		if s.users[i].Token == token.AccessToken {
 			user = &domain.ProfileResponse{
+				ID:           s.users[i].ID,
 				Email:        s.users[i].Email,
 				Name:         s.users[i].Name,
 				DateOfBirth:  s.users[i].DateOfBirth,

@@ -34,6 +34,7 @@ type LoginResponse struct {
 }
 
 type ProfileResponse struct {
+	ID           int    `json:"id"`
 	TelegramName string `json:"telegram_name"`
 	Email        string `json:"email"`
 	Name         string `json:"name"`
