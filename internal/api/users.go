@@ -128,11 +128,12 @@ func (h UsersHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	authCookie := http.Cookie{
-		Name:    AuthCookieName,
-		Value:   token,
-		Path:    "/",
-		Secure:  false,
-		Expires: time.Now().Local().Add(CookieExpired),
+		Name:     AuthCookieName,
+		Value:    token,
+		Path:     ".app.localhost",
+		Secure:   false,
+		Expires:  time.Now().Local().Add(CookieExpired),
+		SameSite: http.SameSiteNoneMode,
 	}
 	http.SetCookie(w, &authCookie)
 	w.WriteHeader(http.StatusOK)
