@@ -7,6 +7,6 @@ var (
 	ErrExists          = errors.New("already exists")
 	ErrBadCredentials  = errors.New("email or password is incorrect")
 	ErrNotFound        = errors.New("not found")
-	ErrNotExists       = errors.New("doesn't exist")
+	ErrNotExists       = errors.New("user doesn't exist")
 	ErrTokenNotCreated = errors.New("token didn't created")
 )

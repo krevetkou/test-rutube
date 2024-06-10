@@ -5,43 +5,55 @@ import (
 )
 
 type User struct {
-	ID             int
-	Email          string
-	Password       string
-	Name           string
-	DateOfBirth    string
-	Token          string
-	TelegramName   string
-	SubscribeUsers []string
+	ID                 int
+	Email              string
+	Password           string
+	Name               string
+	DateOfBirth        string
+	Token              string
+	DaysToNotification int
+	SubscribeUsers     []int
 }
 
 type RegisterRequest struct {
-	Email        string `json:"email"`
-	Name         string `json:"name"`
-	Password     string `json:"password"`
-	TelegramName string `json:"telegram_name"`
-	DateOfBirth  string `json:"date_of_birth"`
+	Email       string `json:"email"`
+	Name        string `json:"name"`
+	Password    string `json:"password"`
+	DateOfBirth string `json:"dateOfBirth"`
 }
 
 type LoginRequest struct {
-	Email        string `json:"email"`
-	Password     string `json:"password"`
-	TelegramName string `json:"telegram_name"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
 }
 
-type LoginResponse struct {
-	AccessToken string `json:"access_token"`
+type UserResponse struct {
+	Email              string `json:"email"`
+	Name               string `json:"name"`
+	DaysToNotification int    `json:"daysToNotification"`
+}
+
+type UserInListResponse struct {
+	Email string `json:"email"`
+	Name  string `json:"name"`
 }
 
 type ProfileResponse struct {
 	ID           int    `json:"id"`
-	TelegramName string `json:"telegram_name"`
 	Email        string `json:"email"`
 	Name         string `json:"name"`
-	DateOfBirth  string `json:"date_of_birth"`
+	IsSubscribed bool   `json:"isSubscribed"`
 }
 
 type SubscribeRequest struct {
-	TelegramName  string `json:"telegram_name"`
-	SubscribeUser string `json:"subscribe_user"`
+	UserId int `json:"userId"`
+}
+
+type SettingsRequest struct {
+	DaysToNotification int    `json:"daysToNotification"`
+	Email              string `json:"email,omitempty"`
+}
+
+type DefaultResponse struct {
+	Success bool `json:"success"`
 }

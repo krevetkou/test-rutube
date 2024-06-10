@@ -8,6 +8,8 @@ require (
 )
 
 require (
+	github.com/bxcodec/faker/v3 v3.8.1 // indirect
 	github.com/go-chi/chi/v5 v5.0.12 // indirect
+	github.com/rs/cors v1.11.0 // indirect
 	golang.org/x/sys v0.0.0-20220715151400-c0bba94af5f8 // indirect
 )
