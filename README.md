@@ -5,3 +5,4 @@
 3. Далее "npm run start"
 4. В консоли репозитория test-rutube/cmd запустить "go run main.go"
 5. Перейти на http://localhost:3000/ 
+6. Не работают куки на localhost, однако они реализованы в приложении
