@@ -6,16 +6,21 @@ import (
 	"github.com/krevetkou/test-rutube/internal/domain"
 	"log"
 	"net/http"
+	"time"
 )
 
+const CookieExpired = time.Hour * 24 * 365 * 10
+const AuthCookieName = "token"
+
 type UsersService interface {
-	Create(actor domain.RegisterRequest) (domain.User, error)
-	List() ([]domain.ProfileResponse, error)
-	Login(actor domain.LoginRequest) (domain.User, error)
-	CreateToken(user domain.User) (string, error)
-	GetProfile(token domain.LoginResponse) (domain.ProfileResponse, error)
-	Subscribe(tgUser, subscribeUser string) error
-	Unsubscribe(tgUser, subscribeUser string) error
+	GetUsersByToken(token string) ([]domain.ProfileResponse, error)
+	GetAllUsers() ([]domain.UserInListResponse, error)
+	Login(actor domain.LoginRequest) (domain.UserResponse, error)
+	CreateToken(email string) (string, error)
+	GetUserInfo(token string) (domain.UserResponse, error)
+	Subscribe(token string, userId int) error
+	Unsubscribe(token string, userId int) error
+	Settings(token string, daysToBirthday int, email string) error
 }
 
 type UsersHandler struct {
@@ -28,43 +33,21 @@ func NewUsersHandler(service UsersService) UsersHandler {
 	}
 }
 
-func (h UsersHandler) Create(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("Content-Type") != "application/json" {
-		http.Error(w, "content type not allowed", http.StatusUnsupportedMediaType)
+func (h UsersHandler) ListToday(w http.ResponseWriter, r *http.Request) {
+	users, err := h.Service.GetAllUsers()
+	if err != nil {
+		http.Error(w, "failed to get users", http.StatusInternalServerError)
 		return
 	}
-
-	var newUser domain.RegisterRequest
-	err := json.NewDecoder(r.Body).Decode(&newUser)
+	data, err := json.Marshal(users)
 	if err != nil {
-		http.Error(w, "failed to read request body", http.StatusBadRequest)
 		log.Println(err)
-		return
-	}
-
-	createdUser, err := h.Service.Create(newUser)
-	if err != nil {
-		switch {
-		case errors.Is(err, domain.ErrFieldsRequired):
-			http.Error(w, "all required fields must have values", http.StatusUnprocessableEntity)
-		case errors.Is(err, domain.ErrExists):
-			http.Error(w, "user already exists", http.StatusConflict)
-		default:
-			http.Error(w, "unexpected error", http.StatusInternalServerError)
-		}
-		log.Println(err)
-
-		return
-	}
-
-	t, err := h.Service.CreateToken(createdUser)
-	if err != nil {
+		http.Error(w, "failed to create response data", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Add("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	_, err = w.Write([]byte(t))
+	_, err = w.Write(data)
 	if err != nil {
 		log.Println(err)
 		return
@@ -72,8 +55,16 @@ func (h UsersHandler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h UsersHandler) List(w http.ResponseWriter, r *http.Request) {
-	users, err := h.Service.List()
+	cookie, err := r.Cookie(AuthCookieName)
+
 	if err != nil {
+		http.Error(w, "need to login", http.StatusUnauthorized)
+		return
+	}
+
+	users, err := h.Service.GetUsersByToken(cookie.Value)
+	if err != nil {
+		log.Println(err)
 		http.Error(w, "failed to get users", http.StatusInternalServerError)
 		return
 	}
@@ -98,15 +89,15 @@ func (h UsersHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var user domain.LoginRequest
-	err := json.NewDecoder(r.Body).Decode(&user)
+	var request domain.LoginRequest
+	err := json.NewDecoder(r.Body).Decode(&request)
 	if err != nil {
 		http.Error(w, "failed to read request body", http.StatusBadRequest)
 		log.Println(err)
 		return
 	}
 
-	createdUser, err := h.Service.Login(user)
+	createdUser, err := h.Service.Login(request)
 	if err != nil {
 		switch {
 		case errors.Is(err, domain.ErrNotExists):
@@ -129,7 +120,22 @@ func (h UsersHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Add("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
+
+	token, err := h.Service.CreateToken(request.Email)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	authCookie := http.Cookie{
+		Name:    AuthCookieName,
+		Value:   token,
+		Path:    "/",
+		Secure:  false,
+		Expires: time.Now().Local().Add(CookieExpired),
+	}
+	http.SetCookie(w, &authCookie)
+	w.WriteHeader(http.StatusOK)
 	_, err = w.Write(data)
 	if err != nil {
 		log.Println(err)
@@ -137,17 +143,22 @@ func (h UsersHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h UsersHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
-	token := r.Header.Get("Authorization")
+func (h UsersHandler) GetUserInfo(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie(AuthCookieName)
 
-	regUser, err := h.Service.GetProfile(domain.LoginResponse{AccessToken: token})
+	if err != nil {
+		http.Error(w, "need to login", http.StatusUnauthorized)
+		return
+	}
+
+	user, err := h.Service.GetUserInfo(cookie.Value)
 	if err != nil {
 		http.Error(w, "failed to get profile", http.StatusBadRequest)
 		log.Println(err)
 		return
 	}
 
-	data, err := json.Marshal(regUser)
+	data, err := json.Marshal(user)
 	if err != nil {
 		http.Error(w, "failed to create response data", http.StatusInternalServerError)
 		log.Println(err)
@@ -155,6 +166,7 @@ func (h UsersHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Add("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	_, err = w.Write(data)
 	if err != nil {
 		log.Println(err)
@@ -168,15 +180,22 @@ func (h UsersHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var subscribe domain.SubscribeRequest
-	err := json.NewDecoder(r.Body).Decode(&subscribe)
+	var request domain.SubscribeRequest
+	err := json.NewDecoder(r.Body).Decode(&request)
 	if err != nil {
 		http.Error(w, "failed to read request body", http.StatusBadRequest)
 		log.Println(err)
 		return
 	}
 
-	err = h.Service.Subscribe(subscribe.TelegramName, subscribe.SubscribeUser)
+	cookie, err := r.Cookie(AuthCookieName)
+
+	if err != nil {
+		http.Error(w, "need to login", http.StatusUnauthorized)
+		return
+	}
+
+	err = h.Service.Subscribe(cookie.Value, request.UserId)
 	if err != nil {
 		switch {
 		case errors.Is(err, domain.ErrExists):
@@ -191,11 +210,16 @@ func (h UsersHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	text := subscribe.TelegramName + " successfully subscribed to " + subscribe.SubscribeUser
+	data, err := json.Marshal(domain.DefaultResponse{Success: true})
+	if err != nil {
+		http.Error(w, "failed to create response data", http.StatusInternalServerError)
+		log.Println(err)
+		return
+	}
 
 	w.Header().Add("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	_, err = w.Write([]byte(text))
+	w.WriteHeader(http.StatusOK)
+	_, err = w.Write(data)
 	if err != nil {
 		log.Println(err)
 		return
@@ -208,15 +232,22 @@ func (h UsersHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var subscribe domain.SubscribeRequest
-	err := json.NewDecoder(r.Body).Decode(&subscribe)
+	var request domain.SubscribeRequest
+	err := json.NewDecoder(r.Body).Decode(&request)
 	if err != nil {
 		http.Error(w, "failed to read request body", http.StatusBadRequest)
 		log.Println(err)
 		return
 	}
 
-	err = h.Service.Unsubscribe(subscribe.TelegramName, subscribe.SubscribeUser)
+	cookie, err := r.Cookie(AuthCookieName)
+
+	if err != nil {
+		http.Error(w, "need to login", http.StatusUnauthorized)
+		return
+	}
+
+	err = h.Service.Unsubscribe(cookie.Value, request.UserId)
 	if err != nil {
 		switch {
 		case errors.Is(err, domain.ErrNotExists):
@@ -229,11 +260,66 @@ func (h UsersHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	text := subscribe.TelegramName + " successfully unsubscribed from " + subscribe.SubscribeUser
+	data, err := json.Marshal(domain.DefaultResponse{Success: true})
+	if err != nil {
+		http.Error(w, "failed to create response data", http.StatusInternalServerError)
+		log.Println(err)
+		return
+	}
 
 	w.Header().Add("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	_, err = w.Write([]byte(text))
+	w.WriteHeader(http.StatusOK)
+	_, err = w.Write(data)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+}
+
+func (h UsersHandler) Settings(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Content-Type") != "application/json" {
+		http.Error(w, "content type not allowed", http.StatusUnsupportedMediaType)
+		return
+	}
+
+	var request domain.SettingsRequest
+	err := json.NewDecoder(r.Body).Decode(&request)
+	if err != nil {
+		http.Error(w, "failed to read request body", http.StatusBadRequest)
+		log.Println(err)
+		return
+	}
+
+	cookie, err := r.Cookie(AuthCookieName)
+
+	if err != nil {
+		http.Error(w, "need to login", http.StatusUnauthorized)
+		return
+	}
+
+	err = h.Service.Settings(cookie.Value, request.DaysToNotification, request.Email)
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrNotExists):
+			http.Error(w, "user doesn't exist", http.StatusConflict)
+		default:
+			http.Error(w, "unexpected error", http.StatusInternalServerError)
+		}
+		log.Println(err)
+
+		return
+	}
+
+	data, err := json.Marshal(domain.DefaultResponse{Success: true})
+	if err != nil {
+		http.Error(w, "failed to create response data", http.StatusInternalServerError)
+		log.Println(err)
+		return
+	}
+
+	w.Header().Add("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, err = w.Write(data)
 	if err != nil {
 		log.Println(err)
 		return
